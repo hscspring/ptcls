@@ -48,22 +48,51 @@ class InputBuilder:
         else:
             return lst + [self.pad_token_id] * (length - len(lst))
 
-    def tokenize_token(self, token_list: List[str]):
+    def tokenize_token(
+        self, token_list: List[str], max_len: int
+    ) -> List[int]:
         pieces = [piece for pieces in token_list for piece in pieces]
         ids = self.tk.convert_tokens_to_ids(pieces)
-        ids = self._pad(ids, self.max_len - 2)
+        ids = self._pad(ids, max_len - 2)
         ids = [self.tk.cls_token_id] + ids + [self.tk.sep_token_id]
         return ids
 
-    def tokenize_piece(self):
-        ...
+    def token_piece2word_mask(
+        self, tokens: List[str], length: int
+    ) -> List[List[bool]]:
+        arr = np.zeros((length, length+2), dtype=np.bool_)
+        start = 0
+        for i, pieces in enumerate(tokens):
+            pieces = list(range(start, start + len(pieces)))
+            arr[i, pieces[0] + 1:  pieces[-1] + 2] = 1
+            start += len(pieces)
+        return arr.tolist()
 
-    def __call__(self, text: str, cutter: Callable = None):
-        if cutter:
-            wlist = cutter(text)
-        else:
-            wlist = list(text)
-        tokens = [self.tk.tokenize(w) for w in wlist]
-        bert_inputs = self.tokenize_token(tokens)
-        bert_inputs = torch.tensor(bert_inputs, dtype=torch.int32)
-        return (bert_inputs, )
+    def tokenize(self, text_list: List[str], max_len: int, cutter: Callable):
+        tids, p2w_masks = [], []
+        for text in text_list:
+            if cutter:
+                wlist = cutter(text)
+            else:
+                wlist = list(text)
+            tokens = [self.tk.tokenize(w) for w in wlist]
+            ids = self.tokenize_token(tokens, max_len)
+            tids.append(ids)
+
+            length = len(wlist)
+            p2w = self.token_piece2word_mask(tokens, length)
+            p2w_masks.append(p2w)
+
+        return tids, p2w_masks
+
+    def __call__(self, text_list: List[str], cutter: Callable = None):
+        lengths = [len(s) for s in text_list]
+        max_len = max(lengths) + 2
+        max_len = min(self.max_len, max_len)
+
+        bids, bpwms = self.tokenize(text_list, max_len, cutter)
+
+        bert_inputs = torch.tensor(bids, dtype=torch.int32)
+        piece2word_mask = torch.tensor(bpwms, dtype=torch.bool)
+
+        return (bert_inputs, piece2word_mask)
