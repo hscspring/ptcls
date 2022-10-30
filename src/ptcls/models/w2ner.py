@@ -149,6 +149,7 @@ class Biaffine(nn.Module):
         self.bias_y = bias_y
         weight = torch.zeros((n_out, n_in + int(bias_x), n_in + int(bias_y)))
         nn.init.xavier_normal_(weight)
+        # LabelsxHxH
         self.weight = nn.Parameter(weight, requires_grad=True)
 
     def extra_repr(self):
@@ -161,6 +162,7 @@ class Biaffine(nn.Module):
         return s
 
     def forward(self, x, y):
+        # x,y BxLxH
         if self.bias_x:
             x = torch.cat((x, torch.ones_like(x[..., :1])), -1)
         if self.bias_y:
